@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: anubhava-auth-service
+server:
+  port: 8081
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8080}
+  realm: ${KEYCLOAK_REALM:anubhava}
+  admin-realm: ${KEYCLOAK_ADMIN_REALM:master}
+  admin-username: ${KEYCLOAK_ADMIN_USERNAME:admin}
+  admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+  client-id: ${KEYCLOAK_CLIENT_ID:anubhava-web}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+user-service:
+  url: ${USER_SERVICE_URL:http://localhost:8082}
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}

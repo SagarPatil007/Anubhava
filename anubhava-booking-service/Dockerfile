@@ -26,6 +26,6 @@ USER spring:spring
 
 COPY --from=build --chown=spring:spring /app/target/*.jar app.jar
 
-EXPOSE 8082
+EXPOSE 8084
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
