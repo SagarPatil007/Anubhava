@@ -6,7 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class AnubhavaAuthServiceApplication {
 
-	public static void main(String[] args) {
+	@SuppressWarnings("null")
+	public static void main( String[] args) {
 		SpringApplication.run(AnubhavaAuthServiceApplication.class, args);
 	}
 

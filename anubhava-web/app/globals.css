@@ -128,3 +128,24 @@
     @apply font-sans;
   }
 }
+
+@keyframes connection-notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.connection-notice {
+  animation: connection-notice-enter 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection-notice {
+    animation: none;
+  }
+}

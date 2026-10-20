@@ -17,10 +17,35 @@ const inputClassName =
 
 export function BookingForm({ event }: BookingFormProps) {
   const [isBooked, setIsBooked] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (formEvent: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (formEvent: FormEvent<HTMLFormElement>) => {
     formEvent.preventDefault();
-    setIsBooked(true);
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const formData = new FormData(formEvent.currentTarget);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/v1/booking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: Number(event.id),
+          name: String(formData.get("name") ?? ""),
+          email: String(formData.get("email") ?? ""),
+          phone: String(formData.get("phone") ?? ""),
+          quantity: Number(formData.get("quantity") ?? 1),
+          note: String(formData.get("note") ?? ""),
+        }),
+      });
+      const result = await response.json() as { success?: boolean; message?: string; errors?: Array<{ message?: string }> };
+      if (!response.ok || !result.success) throw new Error(result.errors?.find((item) => item.message)?.message ?? result.message ?? "Unable to complete booking.");
+      setIsBooked(true);
+    } catch (bookingError) {
+      setError(bookingError instanceof Error ? bookingError.message : "Unable to complete booking.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isBooked) {
@@ -50,15 +75,15 @@ export function BookingForm({ event }: BookingFormProps) {
       <div className="mt-7 grid gap-6 sm:grid-cols-2">
         <label className="block text-sm font-semibold text-[#173b35]">
           Full name <span className="text-[#da6b43]">*</span>
-          <Input required name="name" autoComplete="name" placeholder="Your name" className={inputClassName} />
+          <Input required minLength={2} maxLength={120} pattern="[\p{L}][\p{L} .'-]{1,119}" title="Enter a name using letters, spaces, apostrophes, periods, or hyphens." name="name" autoComplete="name" placeholder="Your name" className={inputClassName} />
         </label>
         <label className="block text-sm font-semibold text-[#173b35]">
           Email address <span className="text-[#da6b43]">*</span>
-          <Input required name="email" type="email" autoComplete="email" placeholder="you@example.com" className={inputClassName} />
+          <Input required maxLength={254} name="email" type="email" autoComplete="email" placeholder="you@example.com" className={inputClassName} />
         </label>
         <label className="block text-sm font-semibold text-[#173b35]">
           Phone number
-          <Input name="phone" type="tel" autoComplete="tel" placeholder="Optional" className={inputClassName} />
+          <Input name="phone" type="tel" maxLength={24} pattern="(?=(?:\D*\d){7,15}\D*$)\+?[0-9() .-]+" title="If provided, enter a phone number with 7 to 15 digits." autoComplete="tel" placeholder="Optional" className={inputClassName} />
         </label>
         <label className="block text-sm font-semibold text-[#173b35]">
           Number of places <span className="text-[#da6b43]">*</span>
@@ -71,13 +96,13 @@ export function BookingForm({ event }: BookingFormProps) {
         </label>
         <label className="block text-sm font-semibold text-[#173b35] sm:col-span-2">
           Note for the hosts
-          <textarea name="note" placeholder="Anything you would like us to know?" className="mt-2 min-h-28 w-full resize-y border border-[#c7d2c8] bg-[#fbfcf8] px-3 py-3 text-sm leading-6 text-[#173b35] outline-none placeholder:text-[#8a9a91] focus:border-[#da6b43] focus:ring-3 focus:ring-[#da6b43]/20" />
+          <textarea name="note" maxLength={2000} placeholder="Anything you would like us to know?" className="mt-2 min-h-28 w-full resize-y border border-[#c7d2c8] bg-[#fbfcf8] px-3 py-3 text-sm leading-6 text-[#173b35] outline-none placeholder:text-[#8a9a91] focus:border-[#da6b43] focus:ring-3 focus:ring-[#da6b43]/20" />
         </label>
       </div>
 
       <div className="mt-8 flex flex-col-reverse justify-between gap-4 border-t border-[#d8ded8] pt-6 sm:flex-row sm:items-center">
         <Link href={`/events/${event.id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-[#5a7068] hover:text-[#173b35]"><ArrowLeft aria-hidden="true" className="size-4" /> Back to event</Link>
-        <Button type="submit" className="h-12 gap-2 bg-[#173b35] px-6 text-[#f5f7f2] hover:bg-[#28584e]">Confirm reservation <ArrowUpRight aria-hidden="true" className="size-4" /></Button>
+        <div className="flex flex-col items-end gap-2">{error && <p role="alert" className="text-sm text-[#b84d32]">{error}</p>}<Button disabled={isSubmitting} type="submit" className="h-12 gap-2 bg-[#173b35] px-6 text-[#f5f7f2] hover:bg-[#28584e]">{isSubmitting ? "Booking..." : "Confirm reservation"} <ArrowUpRight aria-hidden="true" className="size-4" /></Button></div>
       </div>
     </form>
   );

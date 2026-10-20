@@ -17,4 +17,6 @@ public interface EventService {
 
 	ApiResponse listEvents(LocalDate startDate, LocalDate endDate, String eventType, String city, Boolean paid);
 
+	ApiResponse listEventsByOrganizer(Long organizerId);
+
 }

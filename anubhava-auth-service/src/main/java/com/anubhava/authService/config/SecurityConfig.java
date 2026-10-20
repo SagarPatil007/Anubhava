@@ -1,15 +1,14 @@
 package com.anubhava.authService.config;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.web.client.RestClient;
-
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.client.RestClient;
 
 @Configuration
 public class SecurityConfig {
@@ -27,8 +26,8 @@ public class SecurityConfig {
 	private String adminPassword;
 
 	@Bean
-	RestClient restClient(RestClient.Builder builder) {
-		return builder.build();
+	RestClient restClient() {
+		return RestClient.builder().build();
 	}
 
 	@Bean
@@ -47,7 +46,7 @@ public class SecurityConfig {
 	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		return http.csrf(csrf -> csrf.disable())
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/api/v1/auth/**", "/actuator/health").permitAll()
+						.requestMatchers("/api/v1/auth/**", "/actuator/health", "/error").permitAll()
 						.anyRequest().authenticated())
 				.build();
 	}

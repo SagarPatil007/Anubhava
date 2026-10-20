@@ -15,6 +15,15 @@ type AuthModalProps = {
   onModeChange: (mode: AuthMode) => void;
 };
 
+type ApiResponse = {
+  success: boolean;
+  message?: string;
+  data?: unknown;
+  errors?: Array<{ field?: string; message?: string }>;
+};
+
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
 const onboardingQuestions = [
   {
     question: "Are you married or single?",
@@ -65,6 +74,8 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
   const [isOnboarding, setIsOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingAnswers, setOnboardingAnswers] = useState<Record<number, string[]>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const currentQuestion = onboardingQuestions[onboardingStep];
   const currentAnswers = onboardingAnswers[onboardingStep] ?? [];
@@ -84,6 +95,88 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
   const finishOnboarding = () => {
     setIsOnboarding(false);
     setIsSubmitted(true);
+  };
+
+  const submitAuth = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage(null);
+    setIsSubmitting(true);
+
+    const formData = new FormData(event.currentTarget);
+    const password = String(formData.get("password") ?? "");
+
+    if (mode === "signup" && !password.trim()) {
+      setErrorMessage("Password is required.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const payload = mode === "login"
+      ? {
+          email: String(formData.get("email") ?? ""),
+          password,
+        }
+      : {
+          firstName: String(formData.get("firstName") ?? ""),
+          lastName: String(formData.get("lastName") ?? ""),
+          email: String(formData.get("email") ?? ""),
+          phoneNumber: String(formData.get("phoneNumber") ?? ""),
+          password,
+        };
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/auth/${mode === "login" ? "login" : "signup"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const responseBody = await response.text();
+      if (!responseBody.trim()) {
+        throw new Error(
+          `The authentication service returned an empty response (HTTP ${response.status}).`,
+        );
+      }
+
+      let result: ApiResponse;
+      try {
+        result = JSON.parse(responseBody) as ApiResponse;
+      } catch {
+        throw new Error(
+          `The authentication service returned an invalid response (HTTP ${response.status}).`,
+        );
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.errors?.find((item) => item.message)?.message ?? result.message ?? "Authentication failed.");
+      }
+
+      if (mode === "login") {
+        const loginEmail = String(formData.get("email") ?? "");
+        const tokenData = result.data as { access_token?: string; accessToken?: string; refresh_token?: string } | undefined;
+        const accessToken = tokenData?.access_token ?? tokenData?.accessToken;
+        if (accessToken) {
+          window.localStorage.setItem("anubhava_access_token", accessToken);
+        }
+        const refreshToken = tokenData?.refresh_token;
+        if (refreshToken) {
+          window.localStorage.setItem("anubhava_refresh_token", refreshToken);
+        }
+        window.localStorage.setItem("anubhava_user_email", loginEmail);
+        window.dispatchEvent(new Event("anubhava-auth-changed"));
+        window.dispatchEvent(new Event("anubhava-login-success"));
+        onClose();
+      } else {
+        const signupEmail = String(formData.get("email") ?? "");
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("anubhava_user_email", signupEmail);
+        }
+        router.push(`/onboarding?email=${encodeURIComponent(signupEmail)}`);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to connect to the authentication service.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -201,17 +294,46 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
             </div>
             <form
               className="space-y-5"
-              onSubmit={(event) => {
+              onSubmit={async (event) => {
                 event.preventDefault();
-                setIsSubmitted(true);
+                setErrorMessage(null);
+                setIsSubmitting(true);
+
+                try {
+                  const formData = new FormData(event.currentTarget);
+                  const email = String(formData.get("recoveryEmail") ?? "");
+
+                  const response = await fetch(`${apiBaseUrl}/api/v1/auth/forgot-password`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email }),
+                  });
+
+                  const result = (await response.json()) as ApiResponse;
+
+                  if (!response.ok || !result.success) {
+                    throw new Error(result.errors?.find((item) => item.message)?.message ?? result.message ?? "Unable to send reset link.");
+                  }
+
+                  setIsSubmitted(true);
+                } catch (error) {
+                  setErrorMessage(error instanceof Error ? error.message : "Unable to send reset link.");
+                } finally {
+                  setIsSubmitting(false);
+                }
               }}
             >
               <label className="block text-sm font-semibold text-[#173b35]">
                 Email address
-                <Input required name="recoveryEmail" type="email" autoComplete="email" placeholder="you@company.com" className={inputClassName} />
+                <Input required maxLength={254} name="recoveryEmail" type="email" autoComplete="email" placeholder="you@company.com" className={inputClassName} />
               </label>
-              <Button type="submit" className="flex h-12 w-full items-center justify-center gap-2 bg-[#173b35] text-sm font-semibold text-[#f5f7f2] transition-colors hover:bg-[#28584e]">
-                Send reset link <ArrowUpRight aria-hidden="true" className="size-4" />
+              {errorMessage && (
+                <p role="alert" className="text-sm text-[#b84d32]">
+                  {errorMessage}
+                </p>
+              )}
+              <Button disabled={isSubmitting} type="submit" className="flex h-12 w-full items-center justify-center gap-2 bg-[#173b35] text-sm font-semibold text-[#f5f7f2] transition-colors hover:bg-[#28584e]">
+                {isSubmitting ? "Sending..." : "Send reset link"} <ArrowUpRight aria-hidden="true" className="size-4" />
               </Button>
             </form>
             <button
@@ -240,7 +362,7 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
 
             <Button
               type="button"
-              onClick={() => mode === "signup" ? router.push("/onboarding") : setIsSubmitted(true)}
+              onClick={() => setErrorMessage("Google sign-in is not configured yet. Please use your email.")}
               className="flex h-12 w-full items-center justify-center gap-3 border border-[#c7d2c8] bg-white text-sm font-semibold text-[#173b35] transition-colors hover:bg-[#e9efe8]"
             >
               <GoogleIcon />
@@ -255,68 +377,55 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
 
             <form
               className={mode === "signup" ? "grid grid-cols-2 gap-x-3 gap-y-3" : "space-y-4"}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (mode === "signup") {
-                  router.push("/onboarding");
-                } else {
-                  setIsSubmitted(true);
-                }
-              }}
+              onSubmit={submitAuth}
+              autoComplete="off"
             >
               {mode === "signup" && (
                 <div className="contents">
                   <label className="text-sm font-semibold text-[#173b35]">
                     First name
-                    <Input required name="firstName" type="text" autoComplete="given-name" placeholder="Avery" className={signupInputClassName} />
+                    <Input required minLength={2} maxLength={80} pattern="[\p{L}][\p{L} .'-]{1,79}" title="Use 2–80 letters, spaces, apostrophes, periods, or hyphens." name="firstName" type="text" autoComplete="given-name" placeholder="Avery" className={signupInputClassName} />
                   </label>
                   <label className="text-sm font-semibold text-[#173b35]">
                     Last name
-                    <Input required name="lastName" type="text" autoComplete="family-name" placeholder="Morgan" className={signupInputClassName} />
+                    <Input required minLength={2} maxLength={80} pattern="[\p{L}][\p{L} .'-]{1,79}" title="Use 2–80 letters, spaces, apostrophes, periods, or hyphens." name="lastName" type="text" autoComplete="family-name" placeholder="Morgan" className={signupInputClassName} />
                   </label>
                 </div>
               )}
 
               <label className={`${mode === "signup" ? "" : "block"} text-sm font-semibold text-[#173b35]`}>
                 Email address
-                <Input required name="email" type="email" autoComplete="email" placeholder="you@company.com" className={mode === "signup" ? signupInputClassName : inputClassName} />
+                <Input required maxLength={254} name="email" type="email" autoComplete="email" placeholder="you@company.com" className={mode === "signup" ? signupInputClassName : inputClassName} />
               </label>
 
               {mode === "signup" && (
-                <label className="text-sm font-semibold text-[#173b35]">
+                  <label className="text-sm font-semibold text-[#173b35]">
                   Mobile number
-                  <Input required name="mobileNumber" type="tel" autoComplete="tel" placeholder="+1 555 000 0000" className={signupInputClassName} />
+                    <Input required maxLength={24} pattern="(?=(?:\D*\d){7,15}\D*$)\+?[0-9() .-]+" title="Enter a phone number with 7 to 15 digits." name="phoneNumber" type="tel" autoComplete="tel" placeholder="+1 555 000 0000" className={signupInputClassName} />
                 </label>
               )}
 
               <label className={`${mode === "signup" ? "" : "block"} text-sm font-semibold text-[#173b35]`}>
                 Password
-                <Input required name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Enter your password" className={mode === "signup" ? signupInputClassName : inputClassName} />
+                <Input required minLength={mode === "signup" ? 8 : undefined} maxLength={72} pattern={mode === "signup" ? "(?=.*[A-Za-z])(?=.*[0-9]).*" : undefined} title={mode === "signup" ? "Use at least 8 characters, including a letter and a number." : undefined} name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder="Enter your password" className={mode === "signup" ? signupInputClassName : inputClassName} />
               </label>
-
-              {mode === "signup" && (
-                <>
-                  <label className="text-sm font-semibold text-[#173b35]">
-                    Confirm password
-                    <Input required name="confirmPassword" type="password" autoComplete="new-password" placeholder="Confirm your password" className={signupInputClassName} />
-                  </label>
-                  <label className="text-sm font-semibold text-[#173b35]">
-                    Reconfirm password
-                    <Input required name="reconfirmPassword" type="password" autoComplete="new-password" placeholder="Re-enter your password" className={signupInputClassName} />
-                  </label>
-                </>
-              )}
 
               {mode === "login" && (
                 <div className="flex justify-end">
-                  <button type="button" onClick={() => setIsForgotPassword(true)} className="text-xs font-semibold text-[#da6b43] hover:underline">
+                  <button type="button" onClick={() => setIsForgotPassword(true)} className="cursor-pointer text-xs font-semibold text-[#da6b43] hover:underline">
                     Forgot password?
                   </button>
                 </div>
               )}
 
-              <Button type="submit" className={`${mode === "signup" ? "col-span-2 h-10" : "h-12"} flex w-full items-center justify-center gap-2 bg-[#173b35] text-sm font-semibold text-[#f5f7f2] transition-colors hover:bg-[#28584e]`}>
-                {mode === "login" ? "Log in" : "Create account"}
+              {errorMessage && (
+                <p role="alert" className={`${mode === "signup" ? "col-span-2" : ""} text-sm text-[#b84d32]`}>
+                  {errorMessage}
+                </p>
+              )}
+
+              <Button disabled={isSubmitting} type="submit" className={`${mode === "signup" ? "col-span-2 h-10" : "h-12"} flex w-full items-center justify-center gap-2 bg-[#173b35] text-sm font-semibold text-[#f5f7f2] transition-colors hover:bg-[#28584e]`}>
+                {isSubmitting ? "Please wait..." : mode === "login" ? "Log in" : "Create account"}
                 <ArrowUpRight aria-hidden="true" className="size-4" />
               </Button>
             </form>
@@ -326,12 +435,12 @@ export function AuthModal({ mode, onClose, onModeChange }: AuthModalProps) {
               <button
                 type="button"
                 onClick={() => onModeChange(mode === "login" ? "signup" : "login")}
-                className="font-semibold text-[#173b35] underline decoration-[#da6b43] underline-offset-4"
+                className="cursor-pointer font-semibold text-[#173b35] underline decoration-[#da6b43] underline-offset-4"
               >
                 {mode === "login" ? "Create an account" : "Log in"}
               </button>
             </p>
-            <button type="button" onClick={onClose} className="mx-auto mt-3 flex items-center gap-2 text-xs font-semibold text-[#8a9a91] hover:text-[#173b35]">
+            <button type="button" onClick={onClose} className="mx-auto mt-3 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#8a9a91] hover:text-[#173b35]">
               <ArrowLeft aria-hidden="true" className="size-3" /> Back to site
             </button>
           </>

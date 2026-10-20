@@ -3,16 +3,27 @@
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import { events } from "@/lib/events";
+import { BackendEvent, EventItem, mapBackendEvent } from "@/lib/events";
+import { UserProfileMenu } from "@/components/user-profile-menu";
+import { CitySelector } from "@/components/city-selector";
+import { LoginToast } from "@/components/login-toast";
 
 const categories = ["All events", "Community", "Talks", "Wellbeing", "Workshop", "Gathering"];
+const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-export function EventsHome() {
+type EventsHomeProps = {
+  onLogin: () => void;
+};
+
+export function EventsHome({ onLogin }: EventsHomeProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All events");
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
   const filteredEvents = events.filter((event) => {
     const matchesCategory = category === "All events" || event.category === category;
@@ -20,8 +31,25 @@ export function EventsHome() {
     return matchesCategory && searchableText.includes(deferredQuery.toLowerCase());
   });
 
+  useEffect(() => {
+    const loadEvents = async () => {
+      try {
+        const response = await fetch(`${gatewayUrl}/api/v1/event`);
+        const result = await response.json() as { success?: boolean; data?: BackendEvent[]; message?: string };
+        if (!response.ok || !result.success) throw new Error(result.message ?? "Unable to load events.");
+        setEvents((result.data ?? []).map(mapBackendEvent));
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Unable to load events.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void loadEvents();
+  }, []);
+
   return (
     <>
+      <LoginToast />
       <header className="border-b border-[#d8ded8] bg-[#fbfcf8]">
         <div className="mx-auto flex min-h-[76px] max-w-7xl items-center justify-between gap-6 px-6 lg:px-10">
           <Link href="/" className="flex shrink-0 items-center gap-3 text-[#173b35]" aria-label="Anubhava home">
@@ -39,6 +67,10 @@ export function EventsHome() {
             <a href="#events" className="hover:text-[#173b35]">Discover</a>
             <Link href="/about" className="hover:text-[#173b35]">About</Link>
             <Link href="/events/create" className="inline-flex items-center gap-2 bg-[#da6b43] px-4 py-2.5 text-white transition-colors hover:bg-[#bd5835]">Host an event <span aria-hidden="true">↗</span></Link>
+            <div className="flex items-center gap-3 border-l border-[#d8ded8] pl-4">
+              <CitySelector />
+              <UserProfileMenu fallback={<button type="button" onClick={onLogin} className="cursor-pointer hover:text-[#173b35]">Log in</button>} />
+            </div>
           </nav>
         </div>
         <div className="mx-auto block max-w-7xl px-6 pb-4 md:hidden">
@@ -47,7 +79,13 @@ export function EventsHome() {
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#789087]" />
             <Input id="mobile-event-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" className="h-10 rounded-none border-[#c7d2c8] bg-[#f5f7f2] pl-10 text-sm" />
           </div>
-          <Link href="/events/create" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#da6b43] hover:text-[#bd5835]">Host an event <span aria-hidden="true">↗</span></Link>
+          <div className="mt-3 flex items-center justify-between">
+            <Link href="/events/create" className="inline-flex items-center gap-2 text-sm font-semibold text-[#da6b43] hover:text-[#bd5835]">Host an event <span aria-hidden="true">↗</span></Link>
+            <div className="flex items-center gap-3">
+              <CitySelector />
+              <UserProfileMenu fallback={<button type="button" onClick={onLogin} className="cursor-pointer text-sm font-semibold text-[#173b35] hover:text-[#da6b43]">Log in</button>} />
+            </div>
+          </div>
         </div>
       </header>
 
@@ -67,12 +105,12 @@ export function EventsHome() {
           ))}
         </div>
 
-        {filteredEvents.length > 0 ? (
+        {isLoading ? <div className="border border-dashed border-[#c7d2c8] px-6 py-20 text-center text-sm text-[#5a7068]">Loading events...</div> : loadError ? <div className="border border-dashed border-[#c7d2c8] px-6 py-20 text-center"><p className="font-serif text-3xl text-[#173b35]">Events are unavailable.</p><p className="mt-2 text-sm text-[#b84d32]">{loadError}</p></div> : filteredEvents.length > 0 ? (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filteredEvents.map((event) => (
               <Link href={`/events/${event.id}`} key={event.id} className="group flex min-h-[390px] flex-col border border-[#d8ded8] bg-[#fbfcf8] transition-[transform,box-shadow] hover:-translate-y-1 hover:shadow-[0_14px_30px_rgba(23,59,53,0.1)]">
                 <div className={`relative h-48 overflow-hidden ${event.color}`}>
-                  <Image src={event.thumbnail} alt={`${event.title} event thumbnail`} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <Image src={event.thumbnail} alt={`${event.title} event thumbnail`} fill unoptimized sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="object-cover transition-transform duration-500 group-hover:scale-105" />
                   <span className="absolute left-4 top-4 bg-[#fbfcf8] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#da6b43]">{event.category}</span>
                   <span className="absolute bottom-4 right-4 text-xs font-mono text-[#45615a]">{event.date}</span>
                 </div>

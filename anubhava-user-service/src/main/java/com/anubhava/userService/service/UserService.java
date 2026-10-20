@@ -2,6 +2,7 @@ package com.anubhava.userService.service;
 
 import com.anubhava.commonModule.common.ApiResponse;
 import com.anubhava.commonModule.domain.UserDomain;
+import com.anubhava.commonModule.domain.UserPreferenceDomain;
 
 /**
  * The Interface UserService.
@@ -32,4 +33,10 @@ public interface UserService {
 	 * @return the user data
 	 */
 	ApiResponse getUserData(Long userId);
+
+	ApiResponse getUserByEmail(String email);
+
+	ApiResponse saveUserPreference(UserPreferenceDomain preferenceDomain);
+
+	ApiResponse getUserPreferenceByEmail(String email);
 }

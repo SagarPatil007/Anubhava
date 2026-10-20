@@ -51,11 +51,15 @@ public class EventController {
 
 	@GetMapping
 	public ResponseEntity<ApiResponse> listEvents(
+			@RequestParam(required = false) Long organizerId,
 			@RequestParam(required = false) LocalDate startDate,
 			@RequestParam(required = false) LocalDate endDate,
 			@RequestParam(required = false) String eventType,
 			@RequestParam(required = false) String city,
 			@RequestParam(required = false) Boolean paid) {
+		if (organizerId != null) {
+			return ResponseEntity.ok(eventService.listEventsByOrganizer(organizerId));
+		}
 		return ResponseEntity.ok(eventService.listEvents(startDate, endDate, eventType, city, paid));
 	}
 

@@ -3,9 +3,13 @@
 import { ArrowLeft, ArrowUpRight, Check, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 
 const inputClassName =
@@ -13,11 +17,61 @@ const inputClassName =
 const textareaClassName =
   "mt-2 min-h-32 w-full resize-y border border-[#c7d2c8] bg-[#fbfcf8] px-3 py-3 text-sm leading-6 text-[#173b35] outline-none placeholder:text-[#8a9a91] focus:border-[#da6b43] focus:ring-3 focus:ring-[#da6b43]/20";
 
+const eventSchema = z.object({
+  title: z.string().trim().min(3, "Event name must be at least 3 characters.").max(120, "Event name cannot exceed 120 characters."),
+  category: z.enum(["", "Community", "Talks", "Wellbeing", "Workshop", "Gathering"]).refine((value) => value !== "", "Choose a valid category."),
+  location: z.string().trim().min(1, "Location is required.").max(255, "Location cannot exceed 255 characters."),
+  city: z.string().trim().min(1, "City is required.").max(100, "City cannot exceed 100 characters."),
+  capacity: z.coerce.number().int().positive("Capacity must be greater than zero.").max(100000, "Capacity cannot exceed 100,000."),
+  paid: z.enum(["free", "paid"]),
+  price: z.coerce.number().finite("Enter a valid price.").min(0, "Price cannot be negative.").max(99999999.99, "Price cannot exceed 99,999,999.99.").refine((value) => Number.isInteger(value * 100), "Price can have at most 2 decimal places."),
+  date: z.string().min(1, "Choose a date.").refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date."),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a valid start time."),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a valid end time."),
+  description: z.string().trim().min(1, "Short description is required.").max(1000, "Short description cannot exceed 1,000 characters."),
+  details: z.string().max(3000, "More details cannot exceed 3,000 characters."),
+}).superRefine((values, context) => {
+  if (values.startTime && values.endTime && values.endTime <= values.startTime) {
+    context.addIssue({ code: "custom", path: ["endTime"], message: "End time must be after start time." });
+  }
+  if (values.paid === "paid" && values.price <= 0) {
+    context.addIssue({ code: "custom", path: ["price"], message: "Paid events must have a price greater than zero." });
+  }
+  if (values.description.length + (values.details ? values.details.length + 2 : 0) > 4000) {
+    context.addIssue({ code: "custom", path: ["details"], message: "Combined event description cannot exceed 4,000 characters." });
+  }
+});
+
+type EventFormInput = z.input<typeof eventSchema>;
+type EventFormValues = z.output<typeof eventSchema>;
+const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
 export function CreateEventForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [gallery, setGallery] = useState<string[]>([]);
+  const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const mediaUrls = useRef(new Set<string>());
+  const form = useForm<EventFormInput, unknown, EventFormValues>({
+    resolver: zodResolver(eventSchema),
+    defaultValues: {
+      title: "",
+      category: "",
+      location: "",
+      city: "",
+      capacity: 1,
+      paid: "free",
+      price: 0,
+      date: "",
+      startTime: "",
+      endTime: "",
+      description: "",
+      details: "",
+    },
+  });
+  const paidValue = useWatch({ control: form.control, name: "paid" });
 
   useEffect(() => {
     const urls = mediaUrls.current;
@@ -26,35 +80,108 @@ export function CreateEventForm() {
     };
   }, []);
 
-  const handleThumbnailChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const readFileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+
+  const handleThumbnailChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+      setThumbnailError("Choose an image that is 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
 
     if (thumbnail) {
-      URL.revokeObjectURL(thumbnail);
+      if (thumbnail.startsWith("blob:")) URL.revokeObjectURL(thumbnail);
       mediaUrls.current.delete(thumbnail);
     }
-    const previewUrl = URL.createObjectURL(file);
-    mediaUrls.current.add(previewUrl);
-    setThumbnail(previewUrl);
+    try {
+      setThumbnail(await readFileAsDataUrl(file));
+    } catch (error) {
+      setThumbnailError(error instanceof Error ? error.message : "Unable to read the thumbnail.");
+    }
   };
 
-  const handleGalleryChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []).slice(0, 6 - gallery.length);
-    const previewUrls = files.map((file) => URL.createObjectURL(file));
-    previewUrls.forEach((image) => mediaUrls.current.add(image));
-    setGallery((current) => [...current, ...previewUrls]);
+  const handleGalleryChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (selectedFiles.length > 6 - gallery.length) {
+      setSubmitError("You can add up to 6 gallery images.");
+      event.target.value = "";
+      return;
+    }
+    if (selectedFiles.some((file) => !file.type.startsWith("image/") || file.size > 5 * 1024 * 1024)) {
+      setSubmitError("Each gallery image must be an image that is 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+    const files = selectedFiles;
+    try {
+      const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
+      setGallery((current) => [...current, ...dataUrls]);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to read gallery images.");
+    }
   };
 
   const removeGalleryImage = (image: string) => {
-    URL.revokeObjectURL(image);
+    if (image.startsWith("blob:")) URL.revokeObjectURL(image);
     mediaUrls.current.delete(image);
     setGallery((current) => current.filter((item) => item !== image));
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSubmitted(true);
+  const handleSubmit = async (values: EventFormValues) => {
+    if (!thumbnail) {
+      setThumbnailError("A cover image is required.");
+      return;
+    }
+    setThumbnailError(null);
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      const email = window.localStorage.getItem("anubhava_user_email");
+      if (!email) throw new Error("Please log in before creating an event.");
+
+      const userResponse = await fetch(`${gatewayUrl}/api/v1/users/email?email=${encodeURIComponent(email)}`);
+      const userResult = await userResponse.json() as { success?: boolean; data?: { userId?: number }; message?: string };
+      if (!userResponse.ok || !userResult.success || !userResult.data?.userId) {
+        throw new Error(userResult.message ?? "Unable to identify the event organizer.");
+      }
+
+      const response = await fetch(`${gatewayUrl}/api/v1/event/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventName: values.title,
+          eventType: values.category,
+          startDate: values.date,
+          endDate: values.date,
+          startTime: values.startTime,
+          endTime: values.endTime,
+          venue: values.location,
+          city: values.city,
+          capacity: values.capacity,
+          paid: values.paid === "paid",
+          price: values.paid === "paid" ? values.price : 0,
+          description: [values.description, values.details].filter(Boolean).join("\n\n"),
+          thumbnailUrl: thumbnail,
+          imageUrls: gallery,
+          organizerId: userResult.data.userId,
+          status: "PUBLISHED",
+        }),
+      });
+      const result = await response.json() as { success?: boolean; message?: string; errors?: Array<{ message?: string }> };
+      if (!response.ok || !result.success) throw new Error(result.errors?.find((item) => item.message)?.message ?? result.message ?? "Unable to create event.");
+      setIsSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to create event.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isSubmitted) {
@@ -79,55 +206,57 @@ export function CreateEventForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="border border-[#c7d2c8] bg-[#fbfcf8] p-6 sm:p-10">
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="border border-[#c7d2c8] bg-[#fbfcf8] p-6 sm:p-10">
       <div className="grid gap-6 sm:grid-cols-2">
-        <label className="block sm:col-span-2 text-sm font-semibold text-[#173b35]">
-          Event name <span className="text-[#da6b43]">*</span>
-          <Input required name="title" placeholder="e.g. The Makers Table" className={inputClassName} />
-        </label>
+        <FormField control={form.control} name="title" render={({ field }) => (
+          <FormItem className="sm:col-span-2"><FormLabel>Event name <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input placeholder="e.g. The Makers Table" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
 
-        <label className="block text-sm font-semibold text-[#173b35]">
-          Category <span className="text-[#da6b43]">*</span>
-          <select required name="category" defaultValue="" className={inputClassName}>
-            <option value="" disabled>Choose a category</option>
-            <option>Community</option>
-            <option>Talks</option>
-            <option>Wellbeing</option>
-            <option>Workshop</option>
-            <option>Gathering</option>
-          </select>
-        </label>
+        <FormField control={form.control} name="category" render={({ field }) => (
+          <FormItem><FormLabel>Category <span className="text-[#da6b43]">*</span></FormLabel><FormControl><select className={inputClassName} {...field}><option value="" disabled>Choose a category</option><option>Community</option><option>Talks</option><option>Wellbeing</option><option>Workshop</option><option>Gathering</option></select></FormControl><FormMessage /></FormItem>
+        )} />
 
-        <label className="block text-sm font-semibold text-[#173b35]">
-          Location <span className="text-[#da6b43]">*</span>
-          <Input required name="location" placeholder="Venue or online link" className={inputClassName} />
-        </label>
+        <FormField control={form.control} name="location" render={({ field }) => (
+          <FormItem><FormLabel>Location <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input placeholder="Venue or online link" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
 
-        <label className="block text-sm font-semibold text-[#173b35]">
-          Date <span className="text-[#da6b43]">*</span>
-          <Input required name="date" type="date" className={inputClassName} />
-        </label>
+        <FormField control={form.control} name="city" render={({ field }) => (
+          <FormItem><FormLabel>City <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input placeholder="Pune" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
+
+        <FormField control={form.control} name="capacity" render={({ field }) => (
+          <FormItem><FormLabel>Capacity <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input type="number" min="1" placeholder="50" className={inputClassName} value={field.value == null ? "" : String(field.value)} onChange={(event) => field.onChange(event.target.value)} onBlur={field.onBlur} name={field.name} ref={field.ref} /></FormControl><FormMessage /></FormItem>
+        )} />
+
+        <FormField control={form.control} name="paid" render={({ field }) => (
+          <FormItem><FormLabel>Entry type <span className="text-[#da6b43]">*</span></FormLabel><FormControl><select className={inputClassName} {...field}><option value="free">Free</option><option value="paid">Paid</option></select></FormControl><FormMessage /></FormItem>
+        )} />
+
+        <FormField control={form.control} name="price" render={({ field }) => (
+          <FormItem><FormLabel>Price</FormLabel><FormControl><Input type="number" min="0" step="0.01" placeholder="0" disabled={paidValue !== "paid"} className={inputClassName} value={field.value == null ? "" : String(field.value)} onChange={(event) => field.onChange(event.target.value)} onBlur={field.onBlur} name={field.name} ref={field.ref} /></FormControl><FormMessage /></FormItem>
+        )} />
+
+        <FormField control={form.control} name="date" render={({ field }) => (
+          <FormItem><FormLabel>Date <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input type="date" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-semibold text-[#173b35]">
-            Starts <span className="text-[#da6b43]">*</span>
-            <Input required name="startTime" type="time" className={inputClassName} />
-          </label>
-          <label className="block text-sm font-semibold text-[#173b35]">
-            Ends <span className="text-[#da6b43]">*</span>
-            <Input required name="endTime" type="time" className={inputClassName} />
-          </label>
+          <FormField control={form.control} name="startTime" render={({ field }) => (
+            <FormItem><FormLabel>Starts <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input type="time" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={form.control} name="endTime" render={({ field }) => (
+            <FormItem><FormLabel>Ends <span className="text-[#da6b43]">*</span></FormLabel><FormControl><Input type="time" className={inputClassName} {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
         </div>
 
-        <label className="block text-sm font-semibold text-[#173b35] sm:col-span-2">
-          Short description <span className="text-[#da6b43]">*</span>
-          <textarea required name="description" placeholder="What will people experience?" className={textareaClassName} />
-        </label>
+        <FormField control={form.control} name="description" render={({ field }) => (
+          <FormItem className="sm:col-span-2"><FormLabel>Short description <span className="text-[#da6b43]">*</span></FormLabel><FormControl><textarea placeholder="What will people experience?" className={textareaClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
 
-        <label className="block text-sm font-semibold text-[#173b35] sm:col-span-2">
-          More details
-          <textarea name="details" placeholder="Share the rhythm of the event, who it is for, and what to bring." className={textareaClassName} />
-        </label>
+        <FormField control={form.control} name="details" render={({ field }) => (
+          <FormItem className="sm:col-span-2"><FormLabel>More details</FormLabel><FormControl><textarea placeholder="Share the rhythm of the event, who it is for, and what to bring." className={textareaClassName} {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
 
         <fieldset className="sm:col-span-2">
           <legend className="text-sm font-semibold text-[#173b35]">Event images</legend>
@@ -145,9 +274,10 @@ export function CreateEventForm() {
                     <span className="text-xs">JPG, PNG, or WebP</span>
                   </span>
                 )}
-                <input required={!thumbnail} type="file" name="thumbnail" accept="image/png,image/jpeg,image/webp" onChange={handleThumbnailChange} className="sr-only" />
+                <input type="file" name="thumbnail" accept="image/png,image/jpeg,image/webp" onChange={(event) => { setThumbnailError(null); handleThumbnailChange(event); }} className="sr-only" />
               </label>
-              {thumbnail && <button type="button" onClick={() => { URL.revokeObjectURL(thumbnail); mediaUrls.current.delete(thumbnail); setThumbnail(null); }} className="mt-2 text-xs font-semibold text-[#da6b43] hover:text-[#bd5835]">Remove thumbnail</button>}
+              {thumbnail && <button type="button" onClick={() => { if (thumbnail.startsWith("blob:")) URL.revokeObjectURL(thumbnail); mediaUrls.current.delete(thumbnail); setThumbnail(null); }} className="mt-2 text-xs font-semibold text-[#da6b43] hover:text-[#bd5835]">Remove thumbnail</button>}
+              {thumbnailError && <p className="mt-2 text-sm font-medium text-[#b84d32]">{thumbnailError}</p>}
             </div>
 
             <div>
@@ -179,8 +309,12 @@ export function CreateEventForm() {
 
       <div className="mt-8 flex flex-col-reverse justify-between gap-4 border-t border-[#d8ded8] pt-6 sm:flex-row sm:items-center">
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-[#5a7068] hover:text-[#173b35]"><ArrowLeft aria-hidden="true" className="size-4" /> Cancel</Link>
-        <Button type="submit" className="h-12 gap-2 bg-[#173b35] px-6 text-[#f5f7f2] hover:bg-[#28584e]">Submit event <ArrowUpRight aria-hidden="true" className="size-4" /></Button>
+        <div className="flex flex-col items-end gap-2">
+          {submitError && <p role="alert" className="text-sm text-[#b84d32]">{submitError}</p>}
+          <Button type="submit" disabled={isSubmitting} className="h-12 gap-2 bg-[#173b35] px-6 text-[#f5f7f2] hover:bg-[#28584e]">{isSubmitting ? "Publishing..." : "Submit event"} <ArrowUpRight aria-hidden="true" className="size-4" /></Button>
+        </div>
       </div>
-    </form>
+      </form>
+    </Form>
   );
 }

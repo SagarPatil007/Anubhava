@@ -17,8 +17,8 @@ public interface EventRepository extends JpaRepository<EventEntity, Long> {
 			SELECT event FROM EventEntity event
 			WHERE (:startDate IS NULL OR event.endDate >= :startDate)
 			AND (:endDate IS NULL OR event.startDate <= :endDate)
-			AND (:eventType IS NULL OR LOWER(event.eventType) = LOWER(:eventType))
-			AND (:city IS NULL OR LOWER(event.city) = LOWER(:city))
+			AND (:eventType IS NULL OR event.eventType = :eventType)
+			AND (:city IS NULL OR event.city = :city)
 			AND (:paid IS NULL OR event.paid = :paid)
 			ORDER BY event.startDate ASC, event.startTime ASC
 			""")
@@ -27,4 +27,7 @@ public interface EventRepository extends JpaRepository<EventEntity, Long> {
 			@Param("eventType") String eventType,
 			@Param("city") String city,
 			@Param("paid") Boolean paid);
+
+	@Query("SELECT event FROM EventEntity event WHERE event.organizerId = :organizerId ORDER BY event.startDate ASC, event.startTime ASC")
+	List<EventEntity> findEventsByOrganizerId(@Param("organizerId") Long organizerId);
 }

@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BookingForm } from "@/components/booking-form";
-import { getEvent } from "@/lib/events";
+import { BackendEvent, mapBackendEvent } from "@/lib/events";
+
+const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type BookingPageProps = {
   params: Promise<{ id: string }>;
@@ -11,7 +13,9 @@ type BookingPageProps = {
 
 export default async function BookingPage({ params }: BookingPageProps) {
   const { id } = await params;
-  const event = getEvent(id);
+  const response = await fetch(`${gatewayUrl}/api/v1/event/${encodeURIComponent(id)}`, { cache: "no-store" });
+  const result = await response.json() as { success?: boolean; data?: BackendEvent };
+  const event = result.success && result.data ? mapBackendEvent(result.data) : null;
 
   if (!event) notFound();
 

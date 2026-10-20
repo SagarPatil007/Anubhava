@@ -31,7 +31,17 @@ public class EventServiceImpl implements EventService {
 	@SuppressWarnings("null")
 	@Override
 	public ApiResponse createEvent(EventDomain eventDomain) {
-		final EventEntity savedEvent = eventRepository.save(toEntity(eventDomain));
+		final EventEntity event = toEntity(eventDomain);
+		if (event.getCreatedAt() == null) {
+			event.setCreatedAt(LocalDateTime.now());
+		}
+		if (event.getStatus() == null || event.getStatus().isBlank()) {
+			event.setStatus("PUBLISHED");
+		}
+		if (!event.isPaid()) {
+			event.setPrice(java.math.BigDecimal.ZERO);
+		}
+		final EventEntity savedEvent = eventRepository.save(event);
 		return successResponse("Event created successfully", toDomain(savedEvent));
 	}
 
@@ -70,7 +80,16 @@ public class EventServiceImpl implements EventService {
 	@Override
 	public ApiResponse listEvents(LocalDate startDate, LocalDate endDate, String eventType, String city, Boolean paid) {
 		return successResponse("Events retrieved successfully", eventRepository
-				.findEvents(startDate, endDate, eventType, city, paid).stream().map(this::toDomain).toList());
+				.findEvents(startDate, endDate, normalizeFilter(eventType), normalizeFilter(city), paid).stream().map(this::toDomain).toList());
+	}
+
+	private String normalizeFilter(String value) {
+		return value == null || value.isBlank() ? null : value.trim();
+	}
+
+	@Override
+	public ApiResponse listEventsByOrganizer(Long organizerId) {
+		return successResponse("Organizer events retrieved successfully", eventRepository.findEventsByOrganizerId(organizerId).stream().map(this::toDomain).toList());
 	}
 
 	private EventEntity toEntity(@NonNull EventDomain domain) {

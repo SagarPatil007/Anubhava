@@ -2,7 +2,9 @@ import { ArrowLeft, ArrowUpRight, CalendarDays, MapPin } from "lucide-react";
 import Link from "next/link";
 
 import { SiteFooter } from "@/components/site-footer";
-import { events } from "@/lib/events";
+import { BackendEvent, mapBackendEvent } from "@/lib/events";
+
+const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 const principles = [
   {
@@ -22,7 +24,10 @@ const principles = [
   },
 ];
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const response = await fetch(`${gatewayUrl}/api/v1/event`, { cache: "no-store" });
+  const result = await response.json() as { success?: boolean; data?: BackendEvent[] };
+  const events = result.success ? (result.data ?? []).map(mapBackendEvent) : [];
   return (
     <div className="min-h-full bg-[#f5f7f2] text-[#173b35]">
       <header className="border-b border-[#d8ded8] bg-[#fbfcf8]">

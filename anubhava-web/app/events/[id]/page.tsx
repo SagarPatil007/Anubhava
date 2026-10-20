@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 
 import { SiteFooter } from "@/components/site-footer";
 import { EventGallery } from "@/components/event-gallery";
-import { getEvent } from "@/lib/events";
+import { BackendEvent, mapBackendEvent } from "@/lib/events";
+
+const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type EventPageProps = {
   params: Promise<{ id: string }>;
@@ -12,7 +14,9 @@ type EventPageProps = {
 
 export default async function EventPage({ params }: EventPageProps) {
   const { id } = await params;
-  const event = getEvent(id);
+  const response = await fetch(`${gatewayUrl}/api/v1/event/${encodeURIComponent(id)}`, { cache: "no-store" });
+  const result = await response.json() as { success?: boolean; data?: BackendEvent };
+  const event = result.success && result.data ? mapBackendEvent(result.data) : null;
 
   if (!event) notFound();
 

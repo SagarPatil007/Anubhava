@@ -28,6 +28,7 @@ export function EventGallery({ title, images }: EventGalleryProps) {
           src={activeImage}
           alt={`${title} gallery image ${activeIndex + 1}`}
           fill
+          unoptimized
           priority={activeIndex === 0}
           sizes="(max-width: 1024px) 100vw, 90vw"
           className="object-cover transition-opacity duration-300"
@@ -55,7 +56,7 @@ export function EventGallery({ title, images }: EventGalleryProps) {
             onClick={() => setActiveIndex(index)}
             className={`relative size-20 shrink-0 overflow-hidden border-2 bg-[#e9efe8] transition-opacity sm:size-24 ${activeIndex === index ? "border-[#da6b43]" : "border-transparent opacity-60 hover:opacity-100"}`}
           >
-            <Image src={image} alt="" fill sizes="96px" className="object-cover" />
+            <Image src={image} alt="" fill unoptimized sizes="96px" className="object-cover" />
           </button>
         ))}
       </div>

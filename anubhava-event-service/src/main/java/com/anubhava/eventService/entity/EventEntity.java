@@ -40,11 +40,12 @@ public class EventEntity {
 	private LocalTime endTime;
 	private boolean paid;
 	private BigDecimal price;
+	@Column(name = "thumbnail_url", columnDefinition = "TEXT")
 	private String thumbnailUrl;
 
 	@ElementCollection
 	@CollectionTable(name = "anb_event_images", joinColumns = @JoinColumn(name = "event_id"))
-	@Column(name = "image_url")
+	@Column(name = "image_url", columnDefinition = "TEXT")
 	private List<String> imageUrls = new ArrayList<>();
 
 	@Column(length = 4000)

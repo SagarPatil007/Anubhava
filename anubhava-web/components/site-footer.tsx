@@ -60,7 +60,7 @@ export function SiteFooter() {
             <p className="text-sm font-semibold text-[#dbe8d9]">A little clarity, once a month.</p>
             <form className="mt-3 flex max-w-md border-b border-[#769087] pb-2" onSubmit={(event) => event.preventDefault()}>
               <label htmlFor="footer-email" className="sr-only">Email address</label>
-              <input id="footer-email" type="email" required placeholder="Your email address" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-[#91aaa0]" />
+              <input id="footer-email" type="email" required maxLength={254} placeholder="Your email address" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-[#91aaa0]" />
               <button type="submit" aria-label="Subscribe to newsletter" className="inline-flex items-center gap-2 text-sm font-semibold text-[#dbe8d9] transition-colors hover:text-white">
                 Subscribe <ArrowUpRight aria-hidden="true" className="size-4 text-[#da6b43]" />
               </button>

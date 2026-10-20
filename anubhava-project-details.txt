@@ -1,0 +1,12 @@
+Frontend Applications:
+Anubhava-web (Next.js) (3000)
+
+Backend Applications:
+
+keycloak                  (8180)
+anubhava-gateway-service  (8080)
+anubhava-auth-service     (8081)
+anubhava-user-service     (8082)
+anubhava-event-service    (8083)
+anubhava-booking-service  (8084)
+anubhava-eureka-server    (8761)

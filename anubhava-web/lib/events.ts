@@ -115,7 +115,7 @@ export const events: EventItem[] = [
     details: "This intimate lab explores the simple structures behind memorable stories. You will work on your own material, test it with a small group, and leave with language that feels unmistakably yours.",
     color: "bg-[#e6d5d0]",
     icon: "❋",
-    thumbnail: "https://images.unsplash.com/photo-1455390582262-044cdea277a5?auto=format&fit=crop&w=1200&q=85",
+    thumbnail: "https://images.unsplash.com/photo-1455390582262-044cdea277a5?auto=format&fit=crop&w=1200&q=84",
     gallery: [
       "https://images.unsplash.com/photo-1455390582262-044cdea277a5?auto=format&fit=crop&w=1400&q=85",
       "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=1000&q=85",
@@ -126,4 +126,43 @@ export const events: EventItem[] = [
 
 export function getEvent(id: string) {
   return events.find((event) => event.id === id);
+}
+
+export type BackendEvent = {
+  eventId: number;
+  eventName: string;
+  eventType: string;
+  startDate: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  thumbnailUrl?: string;
+  imageUrls?: string[];
+  description?: string;
+  venue?: string;
+  city?: string;
+  paid?: boolean;
+};
+
+export function mapBackendEvent(event: BackendEvent): EventItem {
+  const images = event.imageUrls?.filter(Boolean) ?? [];
+  const thumbnail = event.thumbnailUrl || images[0] || "/event-placeholder.svg";
+  const startDate = new Date(`${event.startDate}T00:00:00`);
+  const date = Number.isNaN(startDate.getTime()) ? event.startDate : startDate.toLocaleDateString("en-IN", { month: "short", day: "2-digit", year: "numeric" });
+  const time = [event.startTime, event.endTime].filter(Boolean).join(" - ");
+
+  return {
+    id: String(event.eventId),
+    title: event.eventName,
+    category: event.eventType,
+    date,
+    time,
+    location: [event.venue, event.city].filter(Boolean).join(", "),
+    description: event.description ?? "",
+    details: event.description ?? "",
+    color: "bg-[#dbe8d9]",
+    icon: "✦",
+    thumbnail,
+    gallery: images.length > 0 ? images : [thumbnail],
+  };
 }
